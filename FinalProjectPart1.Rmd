@@ -1,0 +1,819 @@
+---
+title: "NYPD Shooting Data Set"
+author: "seresusly"
+date: "2023-08-08"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Libraries Used
+
+We will use the tidyverse collection of packages, as such we will need to load it in this session via the library command.
+
+```{r libraries}
+library(tidyverse)
+library(padr)
+```
+
+## Reading in the Data Set
+
+Here we will read in the NYPD Shooting Incident Data Set from the following link
+
+```{r reading}
+csv_url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+# csv_url <- "~/OneDrive - UCB-O365/MS DS/5301/NYPD_Shooting_Incident_Data__Historic_.csv"
+data <- read_csv(csv_url)
+```
+
+## Showing a Summary of the Data
+
+Here is a summary of the read in data.
+
+```{r summary}
+# Set a seed for reproducibility
+set.seed(42)
+summary(data)
+sessionInfo()
+```
+
+## Tidying & Wrangling the Data
+
+First, we will tidy the data by transforming the date into a date object. Next, we transform all time objects into a difftime object. Next, we remove missing data points and typos by turning them into NA. Next, we set factor variables as factor objects. Lastly, we select the variables we care about, and produce a data set with only complete cases.
+
+```{r tidy}
+# Convert OCCUR_DATE to Date format
+data <- data %>%
+  mutate(OCCUR_DATE = as.Date(OCCUR_DATE, format = "%m/%d/%Y"))
+
+# Convert OCCUR_TIME to difftime format
+data <- data %>%
+  mutate(OCCUR_TIME = as.difftime(OCCUR_TIME)) 
+
+# Cleanse and replace specific values with NA in various columns
+data <- data %>%
+  mutate(PERP_AGE_GROUP = na_if(PERP_AGE_GROUP, "(null)"),
+         PERP_AGE_GROUP = na_if(PERP_AGE_GROUP, "1020"),
+         PERP_AGE_GROUP = na_if(PERP_AGE_GROUP, "940"),
+         PERP_AGE_GROUP = na_if(PERP_AGE_GROUP, "224"),
+         PERP_AGE_GROUP = na_if(PERP_AGE_GROUP, "UNKNOWN"),
+         PERP_SEX = na_if(PERP_SEX, "(null)"),
+         PERP_SEX = na_if(PERP_SEX, "U"),
+         PERP_RACE = na_if(PERP_RACE, "(null)"),
+         PERP_RACE = na_if(PERP_RACE, "UNKNOWN"),
+         VIC_AGE_GROUP = na_if(VIC_AGE_GROUP, "(null)"),
+         VIC_AGE_GROUP = na_if(VIC_AGE_GROUP, "UNKNOWN"),
+         VIC_AGE_GROUP = na_if(VIC_AGE_GROUP, "1022"),
+         VIC_SEX = na_if(VIC_SEX, "(null)"),
+         VIC_SEX = na_if(VIC_SEX, "U"),
+         VIC_RACE = na_if(VIC_RACE, "(null)"),
+         VIC_RACE = na_if(VIC_RACE, "UNKNOWN")
+         )
+
+# Convert selected columns to factors
+data <- data %>%
+  mutate(BORO = as.factor(BORO), 
+         PERP_AGE_GROUP = as.factor(PERP_AGE_GROUP), 
+         PERP_SEX = as.factor(PERP_SEX), 
+         PERP_RACE = as.factor(PERP_RACE),
+         VIC_AGE_GROUP = as.factor(VIC_AGE_GROUP),
+         VIC_SEX = as.factor(VIC_SEX),
+         VIC_RACE = as.factor(VIC_RACE)
+         ) 
+
+# Select relevant columns into select_data
+select_data <- data %>% 
+    select(INCIDENT_KEY, OCCUR_DATE, OCCUR_TIME, BORO, STATISTICAL_MURDER_FLAG, 
+           PERP_AGE_GROUP, PERP_SEX, PERP_RACE, VIC_AGE_GROUP, VIC_SEX, VIC_RACE)
+
+# Create complete_data by removing rows with any NA values
+complete_data <- select_data %>% 
+    subset(complete.cases(select_data))
+
+# Convert OCCUR_DATE in complete_data to Date format
+complete_data$OCCUR_DATE <- as.Date(complete_data$OCCUR_DATE, format = "%m/%d/%Y")
+
+# Display summary of complete_data
+summary(complete_data)
+```
+
+## Visualizing
+
+### Shootings across Time
+
+Shootings per Month
+
+Here we see the number of shootings for every month from January 2006 through December 2022. It is volatile in nature, but some trends can roughly be seen. We'll need more graphs to flesh out these trends.
+
+```{r vis}
+# Create a data frame with distinct shootings, keeping all columns
+distinct_shootings <- complete_data %>% 
+  group_by(INCIDENT_KEY) %>%
+  distinct(INCIDENT_KEY, .keep_all = TRUE) %>%
+  ungroup()
+
+# Add a new column YEAR_MO with the format YYYY-MM
+distinct_shootings$YEAR_MO <- format(distinct_shootings$OCCUR_DATE, "%Y-%m")
+
+# Count the number of distinct shootings per month
+num_distinct_shootings_per_month <- distinct_shootings %>% 
+  group_by(YEAR_MO) %>% 
+  summarize(shootings_per_mo = n()) %>%
+  ungroup()
+
+# Convert the YEAR_MO column to a Date format with day set to 01
+num_distinct_shootings_per_month$YEAR_MO <- 
+    as.Date(paste0(num_distinct_shootings_per_month$YEAR_MO, "-01"))
+
+# Add a new 'month' column to num_distinct_shootings_per_month
+num_distinct_shootings_per_month <- num_distinct_shootings_per_month %>%
+  mutate(month = months(as.Date(YEAR_MO)))
+
+# Define the order of month levels for plotting
+month_levels <- c("January", "February", "March", "April", "May", "June", 
+                  "July", "August", "September", "October", "November", "December")
+
+# Create a line plot using ggplot to visualize shootings per month
+ggplot(num_distinct_shootings_per_month, aes(x = YEAR_MO, y = shootings_per_mo)) +
+  geom_line(color = "red", linewidth = 1) +  
+  labs(x = "Time (in Quarters)", y = "Number of Shootings per Month", 
+       title = "Shootings per Month") +
+  scale_x_date(date_breaks = "3 months", date_labels = "%b %Y") +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+```{r vis_00a}
+# Grouping the data by borough and month, then counting the number of shootings
+borough_shootings <- distinct_shootings %>%
+  group_by(BORO, YEAR_MO) %>%
+  summarize(shootings_per_mo = n()) %>%
+  ungroup()
+
+borough_shootings$YEAR_MO <- 
+  as.Date(paste0(borough_shootings$YEAR_MO, "-01"))
+
+# Creating a line graph for each borough with different colors
+ggplot(borough_shootings, aes(x = YEAR_MO, y = shootings_per_mo, color = BORO, group = BORO)) +
+  geom_line(linewidth = 1) + 
+  labs(x = "Time (in Quarters)", y = "Number of Shootings per Month by Borough", 
+       title = "Shootings per Month Broken Down by Boroughs of New York (2006-2022)") +
+  scale_x_date(date_breaks = "3 months", date_labels = "%b %Y") +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_color_discrete(name = "Borough")
+```
+
+```{r vis_00b}
+# Grouping the data by borough and year, then summing up the number of shootings
+borough_shootings_yearly <- distinct_shootings %>%
+  group_by(BORO, YEAR = format(OCCUR_DATE, "%Y")) %>%
+  summarize(shootings_per_year = sum(n())) %>%
+  ungroup()
+
+# Converting year to a numeric format for plotting
+borough_shootings_yearly$YEAR <- as.numeric(borough_shootings_yearly$YEAR)
+
+# Creating a line graph for each borough with different colors for annual data
+ggplot(borough_shootings_yearly, aes(x = YEAR, y = shootings_per_year, color = BORO, group = BORO)) +
+  geom_line(linewidth = 1) + 
+  geom_point(size = 1.5) + 
+  labs(x = "Year", y = "Shootings per Year", 
+       title = "Shootings per Year, by Borough") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_x_continuous(breaks = seq(2006, 2022, by = 1), limits = c(2005, 2023)) +
+  scale_color_discrete(name = "Borough")
+```
+
+Shootings per Year
+
+Here, we can see shootings have been on the decline since 2006, except for when the pandemic happened in March 2020. There was another spike in 2008, possibly due to the financial crisis.
+
+```{r vis_01}
+# Grouping by year and counting shootings
+num_distinct_shootings_per_year <- distinct_shootings %>%
+  group_by(YEAR = format(OCCUR_DATE, "%Y")) %>%
+  summarize(shootings_per_year = n()) %>%
+  ungroup()
+
+# Converting year to a numeric format
+num_distinct_shootings_per_year$YEAR <- as.numeric(num_distinct_shootings_per_year$YEAR)
+
+# Creating a bar plot for shootings per year
+ggplot(num_distinct_shootings_per_year, aes(x = YEAR, y = shootings_per_year)) +
+  geom_line(color = "red", linewidth = 1) +
+  geom_point() + 
+  labs(x = "Year", y = "Number of Shootings per Year",
+       title = "Shootings per Year (2006-2022)") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_x_continuous(breaks = seq(2006, 2022, by = 1), limits = c(2005, 2023))
+```
+
+Shootings per Month, by Year, Overlay
+
+By seeing all years from January through December in one chart, one can start to see a similar trend, that shootings are lowest in February, and highest in July/August, with a gradient slope differentiating the two, i.e. shootings increase from February onwards, until it peaks in July/August, after which it declines towards its minimal value in February of the next year.
+
+```{r vis_1}
+# Extract the year and month information from YEAR_MO and create new columns for them
+num_distinct_shootings_per_month <- num_distinct_shootings_per_month %>%
+  mutate(year = lubridate::year(YEAR_MO),
+         month = factor(months(YEAR_MO), levels = month_levels, ordered = TRUE))
+
+# Create the overlay line plot with dots and lines
+ggplot(num_distinct_shootings_per_month, aes(x = month, y = shootings_per_mo, 
+                                             color = as.factor(year), group = year)) +
+  geom_line(linewidth = 1) + 
+  geom_point(size = 1) +
+  scale_color_discrete(name = "Year") +
+  labs(x = "Month of the Year", y = "Number of Shootings per Month", 
+       title = "Shootings per Month by Year (Overlay)") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+
+Shootings per Month, Aggregate
+
+Here we have the average shootings per month, across all years, to see a clearer view of the trend I described earlier.
+
+```{r vis_2}
+# Calculate the average shootings per month
+avg_shootings_per_month <- num_distinct_shootings_per_month %>%
+  group_by(month) %>%
+  summarize(avg_shootings = mean(shootings_per_mo)) %>%
+  ungroup() %>%
+  mutate(month = factor(month, levels = month_levels, ordered = TRUE))
+
+# Create a line plot with average shootings per month
+ggplot(avg_shootings_per_month, aes(x = month, y = avg_shootings, group = 1)) +
+  geom_line(color = "red", linewidth = 1) + 
+  geom_point(color = "red", size = 1) +
+  labs(x = "Month of the Year", y = "Average Number of Shootings per Month", 
+       title = "Average Shootings per Month") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+### Shootings Demographics
+
+Next, we'll look at who is shooting who.
+
+Perpetrator Race vs Victim Race
+
+Here we can see that the vast majority of shootings involve African Americans shooting other African Americans.
+
+```{r vis_3}
+# Calculate the count of incidents based on perpetrator and victim race combinations
+race_combination <- complete_data %>%
+  group_by(PERP_RACE, VIC_RACE) %>%
+  summarize(count = n()) %>%
+  ungroup()
+
+# Create a heatmap-style plot to show the relationship between perpetrator and victim races
+ggplot(race_combination, aes(x = PERP_RACE, y = VIC_RACE)) +
+  geom_tile(aes(fill = count), color = "white") +
+  # Add text labels to the tiles
+  # geom_text(aes(label = count), vjust = 1) +
+  scale_fill_gradient(low = "white", high = "red") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Race of Perpetrator vs. Race of Victim",
+       x = "Race of Perpetrator",
+       y = "Race of Victim",
+       fill = "Number of Incidents")
+```
+
+Perpetrator Age vs Victim Age
+
+Here we can see that it is mostly 18-44 y/o shooters shooting other 18-44 y/o's.
+
+```{r vis_4}
+# Calculate the count of incidents based on perpetrator and victim age group combinations
+age_combination <- complete_data %>%
+  group_by(PERP_AGE_GROUP, VIC_AGE_GROUP) %>%
+  summarize(count = n()) %>%
+  ungroup()
+
+# Create a heatmap-style plot to show the relationship between age groups of perpetrators and victims
+ggplot(age_combination, aes(x = PERP_AGE_GROUP, y = VIC_AGE_GROUP)) +
+  geom_tile(aes(fill = count), color = "white") +
+  # Add text labels to the tiles
+  # geom_text(aes(label = count), vjust = 1) +
+  scale_fill_gradient(low = "white", high = "red") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Age Group of Perpetrator vs. Age Group of Victim",
+       x = "Age Group of Perpetrator",
+       y = "Age Group of Victim",
+       fill = "Number of Incidents")
+```
+
+Perpetrator Sex vs Victim Sex
+
+Finally, we can see that it's mostly males shooting males.
+
+```{r vis_5}
+# Calculate the count of incidents based on perpetrator and victim age group combinations
+sex_combination <- complete_data %>%
+  group_by(PERP_SEX, VIC_SEX) %>%
+  summarize(count = n()) %>%
+  ungroup()
+
+# Create a heatmap-style plot to show the relationship between age groups of perpetrators and victims
+ggplot(sex_combination, aes(x = PERP_SEX, y = VIC_SEX)) +
+  geom_tile(aes(fill = count), color = "white") +
+  # Add text labels to the tiles
+  # geom_text(aes(label = count), vjust = 1) +
+  scale_fill_gradient(low = "white", high = "red") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Sex of Perpetrator vs. Sex of Victim",
+       x = "Sex of Perpetrator",
+       y = "Sex of Victim",
+       fill = "Number of Incidents")
+```
+
+Perpetrator Demographics vs Victim Demographics, Aggregate
+
+Altogether now, we can say that the usual stereotype for a shooter is a middle-aged black male; surprisingly this stereotype also appears to be the most common victim as well.
+
+```{r vis_6}
+# Group and summarize data to examine stereotypes in incidents
+stereotype_data <- complete_data %>%
+  group_by(PERP_RACE, PERP_AGE_GROUP, PERP_SEX, VIC_RACE, VIC_AGE_GROUP, VIC_SEX) %>%
+  summarize(count = n()) %>%
+  arrange(-count) %>%
+  ungroup()
+
+# Extract the most common stereotype from the dataset
+top_stereotype <- stereotype_data[1, ]
+
+# Convert the wide-format data to long-format for visualization
+top_stereotype_long <- top_stereotype %>%
+  gather(key = "Attribute", value = "Value", -count)
+```
+
+```{r vis_7, echo=FALSE}
+# Print the most common stereotype information
+cat("Most Common Stereotype:\n")
+cat("Perpetrator - Race:", as.character(top_stereotype$PERP_RACE), 
+    ", Age Group:", as.character(top_stereotype$PERP_AGE_GROUP), 
+    ", Sex:", as.character(top_stereotype$PERP_SEX), "\n")
+cat("Victim - Race:", as.character(top_stereotype$VIC_RACE), 
+    ", Age Group:", as.character(top_stereotype$VIC_AGE_GROUP), 
+    ", Sex:", as.character(top_stereotype$VIC_SEX), "\n")
+```
+
+### Mass Shootings
+
+Next we'll look at Mass Shootings, which the Investigative Assistance for Violent Crimes Act of 2012 defines as shootings where 3 or more victims are killed by one or more perpetrators. For the purposes of this analysis, we'll look at numbers involving shootings done by one perpetrator versus one or more perpetrators. The next sections will sum up how many "Mass Shooting" events have occured, by either definition.
+
+**Where each perpetrator is treated as a sub-incident, and mass shootings are defined as incidents where 3 or more victims are killed [by one perpetrator]**
+
+Victim Counts per Incident Key
+
+```{r vis_8}
+# Group data to generate unique identifiers for perpetrators within incidents
+complete_data <- complete_data %>%
+  group_by(INCIDENT_KEY, PERP_RACE, PERP_AGE_GROUP, PERP_SEX) %>%
+  mutate(PERP_KEY = as.character(sample(10^(9 - 1):(10^9 - 1), 1))) %>%
+  ungroup()
+
+# Count the number of victims per shooting incident
+num_shootings <- complete_data %>%
+  group_by(INCIDENT_KEY) %>%
+  summarize(VICTIM_COUNT = n()) %>%
+  ungroup()
+
+# Merge victim count information with the complete_data for analysis
+victims_per_shooting <- merge(num_shootings, complete_data, by = "INCIDENT_KEY", all.x = TRUE)
+```
+
+Perpetrators per Incident Key
+
+```{r vis_9}
+# Rearrange columns in victims_per_shooting to have INCIDENT_KEY and VICTIM_COUNT first
+victims_per_shooting <- victims_per_shooting %>%
+  select(INCIDENT_KEY, VICTIM_COUNT, PERP_KEY, everything())
+
+# Count the number of unique perpetrators per shooting incident
+num_perpetrators <- victims_per_shooting %>%
+  group_by(INCIDENT_KEY) %>%
+  summarize(NUM_PERP = n_distinct(PERP_KEY)) %>%
+  ungroup()
+
+# Merge the perpetrator count information back into the victims_per_shooting data
+num_perpetrators <- merge(num_perpetrators, victims_per_shooting, by = "INCIDENT_KEY", all.x = TRUE)
+
+# Update the complete_data with the merged data containing perpetrator counts
+complete_data <- num_perpetrators
+```
+
+Victims per Perpetrator Key
+
+```{r vis_10}
+# Calculate the count of victims per perpetrator
+victims_per_perp <- complete_data %>%
+  group_by(PERP_KEY) %>%
+  summarize(VICTIM_COUNT = n()) %>%
+  ungroup()
+
+# Merge victim count information per perpetrator with relevant data from complete_data
+victims_per_perp <- merge(victims_per_perp, 
+                          complete_data %>% select(PERP_KEY, VICTIM_COUNT, everything()), 
+                          by = "PERP_KEY", 
+                          all.x = TRUE)
+
+# Update victim count with the VICTIM_COUNT.x column and remove redundant columns
+victims_per_perp <- victims_per_perp %>% 
+    mutate(VICTIM_COUNT = VICTIM_COUNT.x) %>% 
+    select(-VICTIM_COUNT.x, -VICTIM_COUNT.y)
+
+# Rearrange columns in victims_per_perp to prioritize INCIDENT_KEY, PERP_KEY, VICTIM_COUNT, and NUM_PERP
+victims_per_perp <- victims_per_perp %>% 
+    select(INCIDENT_KEY, PERP_KEY, VICTIM_COUNT, NUM_PERP, everything())
+```
+
+No. of Mass Shootings, i.e. N = Sub-incidents with 3+ Victims
+
+```{r vis_11}
+# Extract distinct shootings for each unique perpetrator
+distinct_shootings_per_perp <- victims_per_perp %>%
+    distinct(PERP_KEY, .keep_all = TRUE)
+
+# Calculate the number of mass shootings based on unique perpetrators
+num_mass_shootings <- nrow(distinct_shootings_per_perp)
+cat("Number of Mass Shootings: ", num_mass_shootings)
+```
+
+**Where each incident, whether by one or more perpetrators, is treated as one incident, and mass shootings are defined as incidents where 3 or more victims are killed**
+
+No. of Mass Shootings, i.e. N = Sub-incidents with 3+ Victims
+
+```{r vis_12}
+# Extract distinct shootings for each unique incident key
+distinct_shootings_per_incident_key <- victims_per_perp %>%
+    distinct(INCIDENT_KEY, .keep_all = TRUE)
+
+# Calculate the number of overall mass shootings based on unique incident keys
+overall_mass_shootings <- nrow(distinct_shootings_per_incident_key)
+cat("Number of Overall Mass Shootings: ", overall_mass_shootings)
+```
+
+Characterizing the Shooter
+
+Now, let's characterize the shooter again, this time for Mass Shootings. A Mass Shooting in this case, and for the rest of the document, is defined as an incident with 3 or more victims and 1 perpetrator.
+
+Male Shooters
+
+We can see that most male shooters are 18-44 y/o African Americans.
+
+```{r vis_13}
+# Filter distinct shootings to include only male shooters
+male_shooters <- distinct_shootings_per_perp %>% 
+  filter(PERP_SEX == "M")
+
+# Calculate total victim counts for male shooters by age group and race
+male_shooter_victim_counts <- male_shooters %>%
+  group_by(PERP_AGE_GROUP, PERP_RACE) %>%
+  summarize(total_victims = sum(VICTIM_COUNT)) %>%
+  ungroup()
+
+# Create a heatmap-style plot to visualize male shooter characteristics
+ggplot(male_shooter_victim_counts, aes(x = PERP_AGE_GROUP, y = PERP_RACE)) +
+  geom_tile(aes(fill = total_victims), color = "white") +
+  scale_fill_gradient(low = "white", high = "red") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Characterizing Male Shooters by Age Group and Race",
+       x = "Age Group of Shooter",
+       y = "Race of Shooter",
+       fill = "Total Number of Victims")
+```
+
+Female Shooters
+
+We can also see that most female shooters are 25-44 y/o African Americans.
+
+```{r vis_14}
+# Filter distinct shootings to include only female shooters
+female_shooters <- distinct_shootings_per_perp %>% 
+  filter(PERP_SEX == "F")
+
+# Calculate total victim counts for female shooters by age group and race
+female_shooter_victim_counts <- female_shooters %>%
+  group_by(PERP_AGE_GROUP, PERP_RACE) %>%
+  summarize(total_victims = sum(VICTIM_COUNT)) %>%
+  ungroup()
+
+# Create a heatmap-style plot to visualize female shooter characteristics
+ggplot(female_shooter_victim_counts, aes(x = PERP_AGE_GROUP, y = PERP_RACE)) +
+  geom_tile(aes(fill = total_victims), color = "white") +
+  scale_fill_gradient(low = "white", high = "red") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Characterizing Female Shooters by Age Group and Race",
+       x = "Age Group of Shooter",
+       y = "Race of Shooter",
+       fill = "Total Number of Victims")
+```
+
+### Time of Shootings
+
+Next, we'll take a look at the number of shootings that occur per hour of the day. From here, we can see that it's safest around 7AM, while the most unsafe hour would be around midnight. The increase towards peak shootings increases steadily after 8AM, where more than half the cases occur between the hours of 8PM and 4AM.
+
+```{r vis_15}
+# Extract the hour from the time
+complete_data$OCCUR_HR <- hour(complete_data$OCCUR_TIME)
+
+# Summarize the count of shootings per hour
+hourly_summary <- complete_data %>%
+  group_by(OCCUR_HR) %>%
+  summarize(Count = n())
+
+# Plot the data using ggplot2
+ggplot(hourly_summary, aes(x = OCCUR_HR, y = Count)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Number of Shootings per Hour",
+       x = "Hour of the Day",
+       y = "Number of Shootings") +
+  scale_x_continuous(breaks = 0:23)  # Set x-axis breaks for each hour of the day
+```
+
+### Location of Shootings
+
+Here we can see where and when shootings occurred, with the specifics such as borough and hour.
+
+```{r vis_16}
+# Summarize the count of shootings per location and hour
+location_hour_summary <- complete_data %>%
+  group_by(BORO, OCCUR_HR) %>%
+  summarize(Count = n())
+
+# Plot heatmap using ggplot2
+ggplot(location_hour_summary, aes(x = OCCUR_HR, y = BORO, fill = Count)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red") +  # Adjust the color scale
+  labs(title = "Number of Shootings per Location and Hour",
+       x = "Hour of the Day",
+       y = "Borough",
+       fill = "Number of Shootings") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  scale_x_continuous(breaks = 0:23)
+```
+
+### Incidence of Shootings
+
+Unfortunately, the above metric was not as reliable a measure given the difference in population between boroughs. In line with this, we analyze incidence instead, using the Department of City Planning's population data. With this, we can see that the Bronx and Brooklyn are still the most problematic areas, especially late at night or in the wee hours of the morning, but Brooklyn is less so than the Bronx. Meanwhile, the other 3 boroughs are quite similar, with cases now showing up in Staten Island whereas previously it looked empty.
+
+```{r vis_17}
+# population data to get incidence
+pop_url <- "https://data.cityofnewyork.us/api/views/xywu-7bv9/rows.csv?accessType=DOWNLOAD"
+# pop_url <- "~/OneDrive - UCB-O365/MS DS/5301/New_York_City_Population_by_Borough__1950_-_2040.csv"
+pop_data <- read_csv(pop_url)
+select_pop_data <- pop_data %>% select(Borough, `2010`)  # Replace `BOROUGH` with the correct column name
+select_pop_data <- select_pop_data[-1, ]  # Remove the first row
+
+# Rename the "BOROUGH" column to match the shooting data
+select_pop_data <- select_pop_data %>%
+  rename(BORO = Borough)  # Make sure the column names match
+
+# Calculate incidence (shootings per hour per 100,000 population)
+incidence_data <- location_hour_summary %>%
+  left_join(select_pop_data %>% mutate(BORO = toupper(BORO)), by = "BORO") %>%
+  mutate(Incidence = Count / as.numeric(`2010`) * 100000)
+
+# Create a heatmap for the incidence data
+ggplot(incidence_data, aes(x = OCCUR_HR, y = BORO, fill = Incidence)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red") +
+  labs(title = "Incidence of Shootings per Borough and Hour",
+       x = "Hour of the Day",
+       y = "Borough",
+       fill = "Incidence per 100K Pop.") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_x_continuous(breaks = 0:23)
+```
+
+### What have we learned?
+
+1.  Though volatile and periodic (intra-yearly and inter-yearly), shootings have been decreasing up until the COVID-19 pandemic happened.
+    1.  Perhaps due to bettering socioeconomic factors or other factors improving quality of life.
+    2.  This, of course, took a dip in the pandemic, so it may be possible to deduce that a life of crime presents itself as a last resort to struggling households.
+    3.  Without economic data tied to these shootings, we cannot be sure; this is also outside the scope of this analysis.
+    4.  This hypothesis can also be observed when shootings are low in the holidays (November-February), whereas they steadily increase in the months further away from the holidays such as March to October, with a peak in July-August.
+        1.  The -ber months signal the start of the decline that ends in February.
+    5.  Furthermore, one can see that it is mostly Brooklyn and the Bronx that experience this steady decline in shootings from 2006-2019, whereas only Staten Island didn't see an uptick in incidents in the pandemic.
+2.  We also discovered that intra-racial shootings are the most common, with African-Americans shooting other African-Americans being the most prominent case (N=\~8K), specifically middle-aged males.
+    1.  To a lesser-degree, intra-age group shootings were still present.
+    2.  We need to remember however, that the population pyramid/structure of the United States, including New York, is still indeed middle-aged, so that could explain a significant portion of this finding.
+    3.  Furthermore, more analysis needs to be done once racial demographics per borough are taken into the equation, but that is outside the scope of this analysis.
+3.  These findings held true for mass shootings as well.
+    1.  The shooter was more likely to be younger (18-24) than older (25-44), but this pattern reverses itself for female shooters.
+4.  The data says it's safest to go about your day around 7AM, after which there is a steady increase in shooting risk until it hits a peak and declines from 1AM onwards.
+5.  This safety/danger window holds true across all boroughs of New York, however, even with population-adjusted figures, Brooklyn and the Bronx in particular, are quite problematic still.
+6.  In closing this analysis, I urge everyone to remember that these are people, not numbers, and that we must strive to get these incidents from happening at all.
+
+```{r appendix, echo = FALSE}
+# Create a line plot using ggplot to visualize shootings per month
+ggsave(
+  file = "Graphs for Final Project Part 1/1.png", 
+  plot = ggplot(num_distinct_shootings_per_month, aes(x = YEAR_MO, y = shootings_per_mo)) +
+           geom_line(color = "red", linewidth = 1) +  
+           labs(x = "Time (in Quarters)", y = "Number of Shootings per Month", 
+                title = "Shootings per Month") +
+           scale_x_date(date_breaks = "3 months", date_labels = "%b %Y") + 
+           theme(axis.text.x = element_text(angle = 90, hjust = 1)),
+  width = 8,
+  height = 4.5
+)
+
+# Creating a line graph for each borough with different colors
+ggsave(
+  file = "Graphs for Final Project Part 1/2.png", 
+  plot = ggplot(borough_shootings, aes(x = YEAR_MO, y = shootings_per_mo, color = BORO, group = BORO)) +
+           geom_line(linewidth = 1) + 
+           labs(x = "Time (in Quarters)", y = "Number of Shootings per Month by Borough", 
+                title = "Shootings per Month Broken Down by Boroughs of New York (2006-2022)") +
+           scale_x_date(date_breaks = "3 months", date_labels = "%b %Y") +  
+           theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+           scale_color_discrete(name = "Borough"),
+  width = 8,
+  height = 4.5
+)
+
+# Creating a line graph for each borough with different colors for annual data
+ggsave(
+  file = "Graphs for Final Project Part 1/3.png", 
+  plot = ggplot(borough_shootings_yearly, aes(x = YEAR, y = shootings_per_year, color = BORO, group = BORO)) +
+           geom_line(linewidth = 1) + 
+           geom_point(size = 1.5) + 
+           labs(x = "Year", y = "Shootings per Year", 
+                title = "Shootings per Year, by Borough") +
+           theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+           scale_x_continuous(breaks = seq(2006, 2022, by = 1), limits = c(2005, 2023)) +
+           scale_color_discrete(name = "Borough"),
+  width = 8,
+  height = 4.5
+)
+
+# Creating a bar plot for shootings per year
+ggsave(
+  file = "Graphs for Final Project Part 1/4.png", 
+  plot = ggplot(num_distinct_shootings_per_year, aes(x = YEAR, y = shootings_per_year)) +
+           geom_line(color = "red", linewidth = 1) +
+           geom_point() + 
+           labs(x = "Year", y = "Number of Shootings per Year",
+                title = "Shootings per Year (2006-2022)") +
+           theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+           scale_x_continuous(breaks = seq(2006, 2022, by = 1), limits = c(2005, 2023)),
+  width = 8,
+  height = 4.5
+)
+
+# Create the overlay line plot with dots and lines
+ggsave(
+  file = "Graphs for Final Project Part 1/5.png", 
+  plot = ggplot(num_distinct_shootings_per_month, aes(x = month, y = shootings_per_mo, 
+                                                      color = as.factor(year), group = year)) +
+           geom_line(linewidth = 1) + 
+           geom_point(size = 1) +
+           scale_color_discrete(name = "Year") +
+           labs(x = "Month of the Year", y = "Number of Shootings per Month", 
+                title = "Shootings per Month by Year (Overlay)") +
+           theme(axis.text.x = element_text(angle = 45, hjust = 1)),
+  width = 8,
+  height = 4.5
+)
+
+# Create a line plot with average shootings per month
+ggsave(
+  file = "Graphs for Final Project Part 1/6.png", 
+  plot = ggplot(avg_shootings_per_month, aes(x = month, y = avg_shootings, group = 1)) +
+           geom_line(color = "red", linewidth = 1) + 
+           geom_point(color = "red", size = 1) +
+           labs(x = "Month of the Year", y = "Average Number of Shootings per Month", 
+                title = "Average Shootings per Month") +
+           theme(axis.text.x = element_text(angle = 45, hjust = 1)),
+  width = 8,
+  height = 4.5
+)
+
+# Create a heatmap-style plot to show the relationship between perpetrator and victim races
+ggsave(
+  file = "Graphs for Final Project Part 1/7.png",
+  plot = ggplot(race_combination, aes(x = PERP_RACE, y = VIC_RACE)) +
+           geom_tile(aes(fill = count), color = "white") +
+           scale_fill_gradient(low = "white", high = "red") +
+           theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+           labs(title = "Race of Perpetrator vs. Race of Victim",
+                x = "Race of Perpetrator",
+                y = "Race of Victim",
+                fill = "Number of Incidents"),
+  width = 8,
+  height = 4.5
+)
+
+# Create a heatmap-style plot to show the relationship between age groups of perpetrators and victims
+ggsave(
+  file = "Graphs for Final Project Part 1/8.png",
+  plot = ggplot(age_combination, aes(x = PERP_AGE_GROUP, y = VIC_AGE_GROUP)) +
+           geom_tile(aes(fill = count), color = "white") +
+           scale_fill_gradient(low = "white", high = "red") +
+           theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+           labs(title = "Age Group of Perpetrator vs. Age Group of Victim",
+                x = "Age Group of Perpetrator",
+                y = "Age Group of Victim",
+                fill = "Number of Incidents"),
+  width = 8,
+  height = 4.5
+)
+
+# Create a heatmap-style plot to show the relationship between age groups of perpetrators and victims
+ggsave(
+  file = "Graphs for Final Project Part 1/9.png",
+  plot = ggplot(sex_combination, aes(x = PERP_SEX, y = VIC_SEX)) +
+           geom_tile(aes(fill = count), color = "white") +
+           scale_fill_gradient(low = "white", high = "red") +
+           theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+           labs(title = "Sex of Perpetrator vs. Sex of Victim",
+                x = "Sex of Perpetrator",
+                y = "Sex of Victim",
+                fill = "Number of Incidents"),
+  width = 8,
+  height = 4.5
+)
+
+# Create a heatmap-style plot to visualize male shooter characteristics
+ggsave(
+  file = "Graphs for Final Project Part 1/10.png",
+  plot = ggplot(male_shooter_victim_counts, aes(x = PERP_AGE_GROUP, y = PERP_RACE)) +
+           geom_tile(aes(fill = total_victims), color = "white") +
+           scale_fill_gradient(low = "white", high = "red") +
+           theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+           labs(title = "Characterizing Male Shooters by Age Group and Race",
+                x = "Age Group of Shooter",
+                y = "Race of Shooter",
+                fill = "Total Number of Victims"),
+  width = 8,
+  height = 4.5
+)
+
+# Create a heatmap-style plot to visualize female shooter characteristics
+ggsave(
+  file = "Graphs for Final Project Part 1/11.png",
+  plot = ggplot(female_shooter_victim_counts, aes(x = PERP_AGE_GROUP, y = PERP_RACE)) +
+           geom_tile(aes(fill = total_victims), color = "white") +
+           scale_fill_gradient(low = "white", high = "red") +
+           theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+           labs(title = "Characterizing Female Shooters by Age Group and Race",
+                x = "Age Group of Shooter",
+                y = "Race of Shooter",
+                fill = "Total Number of Victims"),
+  width = 8,
+  height = 4.5
+)
+
+# Plot the data using ggplot2
+ggsave(
+  file = "Graphs for Final Project Part 1/12.png",
+  plot = ggplot(hourly_summary, aes(x = OCCUR_HR, y = Count)) +
+           geom_line() +
+           geom_point() +
+           labs(title = "Number of Shootings per Hour",
+                x = "Hour of the Day",
+                y = "Number of Shootings") +
+           scale_x_continuous(breaks = 0:23),
+  width = 8,
+  height = 4.5
+)
+
+# Plot heatmap using ggplot2
+ggsave(
+  file = "Graphs for Final Project Part 1/13.png",
+  plot = ggplot(location_hour_summary, aes(x = OCCUR_HR, y = BORO, fill = Count)) +
+           geom_tile() +
+           scale_fill_gradient(low = "white", high = "red") +
+           labs(title = "Number of Shootings per Location and Hour",
+                x = "Hour of the Day",
+                y = "Borough",
+                fill = "Number of Shootings") +
+           theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+           scale_x_continuous(breaks = 0:23),
+  width = 8,
+  height = 4.5
+)
+
+# Create a heatmap for the incidence data
+ggsave(
+  file = "Graphs for Final Project Part 1/14.png",
+  plot = ggplot(incidence_data, aes(x = OCCUR_HR, y = BORO, fill = Incidence)) +
+           geom_tile() +
+           scale_fill_gradient(low = "white", high = "red") +
+           labs(title = "Incidence of Shootings per Borough and Hour",
+                x = "Hour of the Day",
+                y = "Borough",
+                fill = "Incidence per 100K Pop.") +
+           theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+           scale_x_continuous(breaks = 0:23),
+  width = 8,
+  height = 4.5
+)
+
+```
